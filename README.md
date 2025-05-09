@@ -18,9 +18,8 @@ Second, install the dependencies by manually installing them:
 ```bash
 conda create -n diffusion python=3.11
 conda activate diffusion
-conda install pytorch torchvision pytorch-cuda=12.1 -c pytorch -c nvidia
-conda install ipykernel lightning matplotlib "numpy<2.0.0" pandas rich tensorboard
-pip install accelerate deepspeed diffusers fvcore omegaconf timm
+pip install torch torchvision
+pip install accelerate deepspeed diffusers fvcore h5py ipykernel jupyterlab lightning matplotlib numpy omegaconf pandas rich scikit-learn scipy seaborn tensorboard timm
 ```
 
 ## Usage
@@ -36,6 +35,16 @@ python train.py \
 ```
 
 It takes approximately 14 hours to train UNet on the CIFAR-10 dataset for 200 epochs with 64 batch size using 1 RTX 3090 GPUs.
+
+For example, you can train a unet model on cifar dataset using rectified flow with following command:
+```bash
+python train.py \
+--config-file diffusion/configuration/rf_cifar.yaml \
+--num-gpus 1 \
+--num-nodes 1 \
+OUTPUT_DIR output/rf_velocity_unet_cifar \
+DATASET.ROOT $PATH_TO_DATASET_ROOT
+```
 
 We recommend naming the configuration file and output directory with the following format:
 ```txt
