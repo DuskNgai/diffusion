@@ -1,0 +1,16 @@
+DATAMODULE:
+  DATALOADER:
+    PIN_MEMORY: True
+    DROP_LAST: False
+    PERSISTENT_WORKERS: True
+
+    TRAIN:
+      BATCH_SIZE: 64
+      NUM_WORKERS: 8
+
+  DATASET:
+    NAME: CIFAR10Dataset
+    ROOT: null
+
+    TRANSFORM:
+      NAME: build_cifar_transform

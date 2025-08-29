@@ -31,6 +31,7 @@ class PointSetModel(ModelMixin, ConfigMixin):
         score = ((weight * scale * self.mu).sum(dim=-2) - x) / (sigma ** 2)
         return score
 
+
 # Using PointSetScheduler = GaussianModelScheduler
 
 # Using PointSetPipeline = GaussianModelPipeline

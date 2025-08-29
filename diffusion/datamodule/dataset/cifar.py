@@ -4,10 +4,10 @@ from typing import Any
 from omegaconf import DictConfig
 from pytorch_lightning.trainer.states import RunningStage
 from torchvision.datasets import CIFAR10
-from torchvision.transforms import v2, Compose
+from torchvision.transforms import Compose, v2
 
 from coach_pl.configuration import configurable
-from coach_pl.dataset import DATASET_REGISTRY, build_transform
+from coach_pl.datamodule import build_transform, DATASET_REGISTRY
 
 __all__ = ["CIFAR10Dataset"]
 
@@ -30,14 +30,10 @@ class CIFAR10Dataset(CIFAR10):
     @classmethod
     def from_config(cls, cfg: DictConfig, stage: RunningStage) -> dict[str, Any]:
         return {
-            "root": Path(cfg.DATASET.ROOT),
+            "root": Path(cfg.DATAMODULE.DATASET.ROOT),
             "train": stage == RunningStage.TRAINING,
             "transform": build_transform(cfg, stage),
         }
-
-    @property
-    def sampler(self) -> None:
-        return None
 
     @property
     def collate_fn(self) -> None:

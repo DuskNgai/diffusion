@@ -5,7 +5,11 @@ import torch
 
 from coach_pl.configuration import configurable
 from coach_pl.criterion import CRITERION_REGISTRY
-from .base import DiffusionCriterion
+
+from .base import (
+    adaptive_l2_loss,
+    DiffusionCriterion,
+)
 
 __all__ = ["RectifiedFlowCriterion"]
 
@@ -26,10 +30,14 @@ class RectifiedFlowCriterion(DiffusionCriterion):
     @classmethod
     def from_config(cls, cfg: DictConfig) -> dict[str, Any]:
         return {
-            "prediction_type": cfg.MODEL.PREDICTION_TYPE,
+            "prediction_type": cfg.MODULE.NOISE_SCHEDULER.PREDICTION_TYPE,
         }
 
     def forward(
-        self, input: torch.Tensor, target: torch.Tensor, scale: torch.Tensor, sigma: torch.Tensor
+        self,
+        input: torch.Tensor,
+        target: torch.Tensor,
+        scale: torch.Tensor,
+        sigma: torch.Tensor,
     ) -> torch.Tensor:
-        return (input - target).square().mean()
+        return adaptive_l2_loss(input - target)

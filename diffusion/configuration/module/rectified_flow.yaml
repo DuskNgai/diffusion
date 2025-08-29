@@ -1,0 +1,60 @@
+CRITERION:
+  NAME: RectifiedFlowCriterion
+
+MODULE:
+  NAME: RectifiedFlowTrainingModule
+  COMPILE: True
+
+  TIMESTEP_MEAN: 0.0
+  TIMESTEP_STD: 1.0
+
+  OPTIMIZER:
+    NAME: Adam
+    BASE_LR: 1.0e-3
+    PARAMS:
+      WEIGHT_DECAY: 0.0
+      BETAS: [0.9, 0.999]
+      EPS: 1.0e-8
+
+  SCHEDULER:
+    NAME: cosine
+    STEP_ON_EPOCHS: False
+    PARAMS:
+      WARMUP_LR: 1.0e-6
+      WARMUP_EPOCHS: 40
+
+  EMA:
+    ENABLED: True
+    BASE_DECAY: 0.99
+
+  NOISE_SCHEDULER:
+    NAME: RectifiedFlowNoiseScheduler
+
+    PREDICTION_TYPE: velocity
+    SIGMA_DATA: 1.0
+
+TRAINER:
+  STRATEGY: ddp         # Set to `auto`, `ddp`, `deepspeed_stage_2`, `deepspeed_stage_3` ...
+  MIXED_PRECISION: True
+  CHECKPOINT:
+    EVERY_N_EPOCHS: 20  # Each time before a checkpoint is saved, the model will be evaluated on the validation set
+
+    SAVE_BEST: False    # If True, monitor will be required
+    MONITOR: null
+
+  MAX_EPOCHS: 200       # If profiler is enabled, this will be *automatically* set to 1
+  LOG_EVERY_N_STEPS: 20
+  ACCUMULATE_GRAD_BATCHES: 1
+
+  CLIP_GRAD:
+    ALGORITHM: null
+    VALUE: null
+
+  DETERMINISTIC: False  # Set to True to enable cudnn.deterministic
+  BENCHMARK: True       # Set to True to enable cudnn.benchmark
+  PROFILER: null        # Set to `simple` or `advanced` or `pytorch` to enable profiling
+  DETECT_ANOMALY: False # Set to True to enable anomaly detection
+  SYNC_BATCHNORM: False # Set to True to enable sync batchnorm
+
+SEED: 0
+OUTPUT_DIR: null

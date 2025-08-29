@@ -1,0 +1,13 @@
+DATAMODULE:
+  DATALOADER:
+    PIN_MEMORY: True
+    DROP_LAST: False
+    PERSISTENT_WORKERS: True
+
+    TRAIN:
+      BATCH_SIZE: 1024
+      NUM_WORKERS: 8
+
+  DATASET:
+    NAME: SpiralDataset
+    NUM_POINTS: 16384

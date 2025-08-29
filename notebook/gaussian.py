@@ -83,10 +83,7 @@ class GaussianModelPipeline(DiffusionPipeline):
 
     @torch.inference_mode()
     def __call__(
-        self,
-        batch_size: int,
-        num_inference_steps: int,
-        generator: torch.Generator | list[torch.Generator] | None = None
+        self, batch_size: int, num_inference_steps: int, generator: torch.Generator | list[torch.Generator] | None = None
     ) -> torch.Tensor:
         # 0. Sample the initial noisy samples.
         sample = randn_tensor(
@@ -107,13 +104,14 @@ class GaussianModelPipeline(DiffusionPipeline):
 
             # 3. Perform the reverse diffusion process.
             if self.scheduler.config.prediction_type == "epsilon":
-                output = - sigma * score
+                output = -sigma * score
             elif self.scheduler.config.prediction_type == "sample":
                 output = (sigma ** 2 * score + sample) / scale
             elif self.scheduler.config.prediction_type == "velocity":
                 scale_deriv = self.scheduler.config.scale_deriv_fn(timestep)
                 sigma_deriv = self.scheduler.config.sigma_deriv_fn(timestep)
-                output = (scale_deriv / scale) * sample + (scale_deriv / scale - sigma_deriv / sigma) * sigma ** 2 * score
+                output = (scale_deriv / scale) * sample + \
+                         (scale_deriv / scale - sigma_deriv / sigma) * sigma ** 2 * score
             else:
                 raise ValueError(f"Prediction type {self.scheduler.config.prediction_type} is not supported.")
 

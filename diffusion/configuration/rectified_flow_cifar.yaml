@@ -1,8 +1,10 @@
+_BASE_:
+  - ../../coach_pl/configuration/base.yaml
+  - dataset/cifar.yaml
+  - module/rectified_flow.yaml
+
 MODEL:
   NAME: DhariwalUNet
-
-  PREDICTION_TYPE: null
-  SIGMA_DATA: 0.5
 
   IMG_SIZE: 32
   IN_CHANS: 3

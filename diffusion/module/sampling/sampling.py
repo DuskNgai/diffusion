@@ -19,9 +19,7 @@ __all__ = ["SamplingModule"]
 class SamplingModule(LightningModule):
 
     @configurable
-    def __init__(self,
-        model: torch.nn.Module,
-    ) -> None:
+    def __init__(self, model: torch.nn.Module) -> None:
         super().__init__()
 
         self.model = model

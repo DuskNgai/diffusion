@@ -1,123 +1,14 @@
 import math
-from typing import Optional, Union
 
 from diffusers.configuration_utils import ConfigMixin, register_to_config
-from diffusers.utils.torch_utils import randn_tensor
 from diffusers.schedulers.scheduling_utils import SchedulerMixin, SchedulerOutput
+from diffusers.utils.torch_utils import randn_tensor
 import torch
 
 from .formulation_table import FunctionType
 
 
-class BaseContinuousTimeNoiseScheduler(SchedulerMixin, ConfigMixin):
-    """
-    See `ContinuousTimeNoiseScheduler` for more details.
-    """
-    @register_to_config
-    def __init__(self,
-        sigma_data: float = 1.0,
-        scale_fn: FunctionType = lambda t: 1.0,
-        scale_deriv_fn: FunctionType = lambda t: 0.0,
-        sigma_fn: FunctionType = lambda t: t,
-        sigma_deriv_fn: FunctionType = lambda t: 1.0,
-        nsr_inv_fn: FunctionType = lambda nsr: nsr,
-        prediction_type: str = "epsilon",
-        **kwargs,
-    ):
-        assert scale_fn(0.0) == 1.0, "The scale function should be 1.0 at t = 0."
-        assert sigma_fn(0.0) == 0.0, "The sigma function should be 0.0 at t = 0."
-        assert prediction_type in ["epsilon", "sample", "velocity"], f"Prediction type {prediction_type} is not supported."
-
-    def preprocess(self, noisy: torch.Tensor, scale: torch.Tensor, sigma: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Preprocess the noisy data for the network input.
-        """
-        return noisy, scale, sigma
-
-    def postprocess(self, noisy: torch.Tensor, prediction: torch.Tensor, scale: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
-        """
-        Postprocess the noisy data for the network output.
-        """
-        return prediction
-
-
-class ContinuousTimeTrainingNoiseScheduler(BaseContinuousTimeNoiseScheduler):
-    """
-    See `ContinuousTimeNoiseScheduler` for more details.
-    """
-    @register_to_config
-    def __init__(self,
-        sigma_data: float = 1.0,
-        scale_fn: FunctionType = lambda t: 1.0,
-        scale_deriv_fn: FunctionType = lambda t: 0.0,
-        sigma_fn: FunctionType = lambda t: t,
-        sigma_deriv_fn: FunctionType = lambda t: 1.0,
-        nsr_inv_fn: FunctionType = lambda nsr: nsr,
-        prediction_type: str = "epsilon",
-        **kwargs,
-    ):
-        super().__init__(
-            sigma_data=sigma_data,
-            scale_fn=scale_fn,
-            scale_deriv_fn=scale_deriv_fn,
-            sigma_fn=sigma_fn,
-            sigma_deriv_fn=sigma_deriv_fn,
-            nsr_inv_fn=nsr_inv_fn,
-            prediction_type=prediction_type,
-        )
-
-    def add_noise(self,
-        sample: torch.Tensor,
-        noise: torch.Tensor,
-        timestep: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Adds noise to the samples that meet the forward diffusion process,
-        i.e., `x_t = scale(t) * x_0 + sigma(t) * noise`.
-
-        Args:
-            sample (`torch.Tensor`):
-                The samples to add noise to.
-            noise (`torch.Tensor`):
-                The noises tensor for the forward diffusion process.
-            timestep (`torch.Tensor`):
-                The timestepw for the forward diffusion process.
-
-        Returns:
-            `torch.Tensor`:
-                The noisy samples.
-            `torch.Tensor`:
-                The target of the backward process.
-            `torch.Tensor`:
-                The scale of the samples.
-            `torch.Tensor`:
-                The sigma of the noise.
-        """
-
-        while timestep.dim() < sample.dim():
-            timestep = timestep.unsqueeze(-1)
-        scale = self.config.scale_fn(timestep)
-        sigma = self.config.sigma_fn(timestep)
-
-        if self.config.prediction_type == "sample":
-            target = sample
-        elif self.config.prediction_type == "epsilon":
-            target = noise
-        elif self.config.prediction_type == "velocity":
-            scale_deriv = self.config.scale_deriv_fn(timestep)
-            sigma_deriv = self.config.sigma_deriv_fn(timestep)
-            target = scale_deriv * sample + sigma_deriv * noise
-
-        return scale * sample + sigma * noise, target, scale, sigma
-
-    def sample_timestep(self, sample: torch.Tensor) -> torch.Tensor:
-        """
-        Sample training timesteps from a user-defined distribution.
-        """
-        raise NotImplementedError
-
-
-class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
+class ContinuousTimeNoiseScheduler(SchedulerMixin, ConfigMixin):
     """
     Implements general sampler for continuous time diffusion models, whose forward process is defined as:
         `x_t = scale(t) * x_0 + sigma(t) * noise`.
@@ -149,14 +40,16 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
             `sample` (directly predicts the noisy sample) or `velocity` (predicts the velocity of the noisy sample
             moving in the data space during denoising).
         algorithm_type (`str`, defaults to `ode`):
-            Algorithm type for the solver; can be `ode` or `sde`. 
+            Algorithm type for the solver; can be `ode` or `sde`.
         timestep_schedule (`str`, defaults to `linear_lognsr`):
             The schedule for the timesteps; can be `linear_lognsr`, `cosine_lognsr`, `power_lognsr`, or `uniform`.
         kwargs:
             Additional keyword arguments for compatibility.
     """
+
     @register_to_config
-    def __init__(self,
+    def __init__(
+        self,
         t_min: float = 0.002,
         t_max: float = 80.0,
         sigma_data: float = 1.0,
@@ -169,17 +62,10 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
         algorithm_type: str = "ode",
         timestep_schedule: str = "linear_lognsr",
         **kwargs,
-    ):
-        super().__init__(
-            sigma_data=sigma_data,
-            scale_fn=scale_fn,
-            scale_deriv_fn=scale_deriv_fn,
-            sigma_fn=sigma_fn,
-            sigma_deriv_fn=sigma_deriv_fn,
-            nsr_inv_fn=nsr_inv_fn,
-            prediction_type=prediction_type,
-        )
-
+    ) -> None:
+        assert scale_fn(0.0) == 1.0, "The scale function should be 1.0 at t = 0."
+        assert sigma_fn(0.0) == 0.0, "The sigma function should be 0.0 at t = 0."
+        assert prediction_type in ["epsilon", "sample", "velocity"], f"Prediction type {prediction_type} is not supported."
         assert algorithm_type in ["ode", "sde"], f"Algorithm type {algorithm_type} is not supported."
 
         # Setable values
@@ -191,17 +77,19 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
     @property
     def init_noise_sigma(self) -> float:
         # standard deviation of the initial noise distribution
-        return (self.config.sigma_fn(self.config.t_max) ** 2 + (self.config.scale_fn(self.config.t_max) * self.config.sigma_data) ** 2) ** 0.5
+        return (
+            self.config.sigma_fn(self.config.t_max) ** 2 + (self.config.scale_fn(self.config.t_max) * self.config.sigma_data) ** 2
+        ) ** 0.5
 
     @property
-    def step_index(self) -> Optional[int]:
+    def step_index(self) -> int | None:
         """
         The index counter for current timestep. It will increase 1 after each scheduler step.
         """
         return self._step_index
 
     @step_index.setter
-    def step_index(self, step_index: Optional[int] = None) -> None:
+    def step_index(self, step_index: int | None = None) -> None:
         """
         Sets the step index for the scheduler.
 
@@ -212,7 +100,7 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
         self._step_index = step_index
 
     @property
-    def begin_index(self) -> Optional[int]:
+    def begin_index(self) -> int | None:
         """
         The index for the first timestep. It should be set from pipeline with `set_begin_index` method.
         """
@@ -229,10 +117,7 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
         """
         self._begin_index = begin_index
 
-    def set_timesteps(self,
-        num_inference_steps: int = None,
-        device: Optional[Union[str, torch.device]] = None
-    ) -> None:
+    def set_timesteps(self, num_inference_steps: int = None, device: str | torch.device | None = None) -> None:
         """
         Args:
             num_inference_steps (`int`):
@@ -289,10 +174,11 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
         ts = self.config.t_max + ramp * (self.config.t_min - self.config.t_max)
         return ts
 
-    def first_order_update(self,
+    def first_order_update(
+        self,
         model_output: torch.Tensor,
         sample: torch.Tensor,
-        noise: Union[torch.Tensor] = None,
+        noise: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -327,10 +213,14 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
         elif self.config.algorithm_type == "sde":
             scale_ratio = scale_t / scale_u
             if self.config.prediction_type == "epsilon":
-                x_t = scale_ratio * x_u + 2 * (sigma_t - scale_ratio * sigma_u) * model_output + ((sigma_u * scale_ratio) ** 2 - sigma_t ** 2) ** 0.5 * noise
+                x_t = scale_ratio * x_u + \
+                      2 * (sigma_t - scale_ratio * sigma_u) * model_output + \
+                      ((sigma_u * scale_ratio) ** 2 - sigma_t ** 2) ** 0.5 * noise
             elif self.config.prediction_type == "sample":
                 sigma_ratio = sigma_t / sigma_u
-                x_t = (2 * sigma_ratio - scale_ratio) * x_u + 2 * (scale_t - sigma_ratio * scale_u) * model_output + ((sigma_u * scale_ratio) ** 2 - sigma_t ** 2) ** 0.5 * noise
+                x_t = (2 * sigma_ratio - scale_ratio) * x_u + \
+                      2 * (scale_t - sigma_ratio * scale_u) * model_output + \
+                      ((sigma_u * scale_ratio) ** 2 - sigma_t ** 2) ** 0.5 * noise
             elif self.config.prediction_type == "velocity":
                 x_t = x_u + 2 * (t - u) * model_output + ((sigma_u * scale_ratio) ** 2 - sigma_t ** 2) ** 0.5 * noise
             else:
@@ -341,7 +231,7 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
         return x_t
 
     # Copied from diffusers.schedulers.scheduling_edm_dpmsolver_multistep.EDMDPMSolverMultistepScheduler._init_step_index
-    def _init_step_index(self, timestep: torch.Tensor):
+    def _init_step_index(self, timestep: torch.Tensor) -> None:
         """
         Initialize the step_index counter for the scheduler.
         """
@@ -353,7 +243,7 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
             self._step_index = self._begin_index
 
     # Copied from diffusers.schedulers.scheduling_edm_dpmsolver_multistep.EDMDPMSolverMultistepScheduler.index_for_timestep
-    def index_for_timestep(self, timestep: torch.Tensor, schedule_timesteps=None):
+    def index_for_timestep(self, timestep: torch.Tensor, schedule_timesteps=None) -> int:
         if schedule_timesteps is None:
             schedule_timesteps = self.timesteps
 
@@ -372,13 +262,14 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
 
         return step_index
 
-    def step(self,
+    def step(
+        self,
         model_output: torch.Tensor,
         timestep: torch.Tensor,
         sample: torch.Tensor,
-        generator: Union[torch.Generator] = None,
+        generator: torch.Generator | None = None,
         return_dict: bool = True,
-    ) -> Union[SchedulerOutput, tuple]:
+    ) -> SchedulerOutput | tuple:
         """
         Predict the sample from the previous timestep following the reverse process.
 
@@ -400,20 +291,13 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
                 tuple is returned where the first element is the sample tensor.
         """
         if self.num_inference_steps is None:
-            raise ValueError(
-                "Number of inference steps is 'None', you need to run 'set_timesteps' after creating the scheduler"
-            )
+            raise ValueError("Number of inference steps is 'None', you need to run 'set_timesteps' after creating the scheduler")
 
         if self.step_index is None:
             self._init_step_index(timestep)
 
         if self.config.algorithm_type == "sde":
-            noise = randn_tensor(
-                model_output.shape,
-                generator=generator,
-                device=model_output.device,
-                dtype=model_output.dtype
-            )
+            noise = randn_tensor(model_output.shape, generator=generator, device=model_output.device, dtype=model_output.dtype)
         else:
             noise = None
 
@@ -426,3 +310,48 @@ class ContinuousTimeNoiseScheduler(BaseContinuousTimeNoiseScheduler):
             return (prev_sample,)
 
         return SchedulerOutput(prev_sample=prev_sample)
+
+    def add_noise(
+        self,
+        sample: torch.Tensor,
+        noise: torch.Tensor,
+        timestep: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Adds noise to the samples that meet the forward diffusion process,
+        i.e., `x_t = scale(t) * x_0 + sigma(t) * noise`.
+
+        Args:
+            sample (`torch.Tensor`):
+                The samples to add noise to.
+            noise (`torch.Tensor`):
+                The noises tensor for the forward diffusion process.
+            timestep (`torch.Tensor`):
+                The timestepw for the forward diffusion process.
+
+        Returns:
+            `torch.Tensor`:
+                The noisy samples.
+            `torch.Tensor`:
+                The target of the backward process.
+            `torch.Tensor`:
+                The scale of the samples.
+            `torch.Tensor`:
+                The sigma of the noise.
+        """
+
+        while timestep.dim() < sample.dim():
+            timestep = timestep.unsqueeze(-1)
+        scale = self.config.scale_fn(timestep)
+        sigma = self.config.sigma_fn(timestep)
+
+        if self.config.prediction_type == "sample":
+            target = sample
+        elif self.config.prediction_type == "epsilon":
+            target = noise
+        elif self.config.prediction_type == "velocity":
+            scale_deriv = self.config.scale_deriv_fn(timestep)
+            sigma_deriv = self.config.sigma_deriv_fn(timestep)
+            target = scale_deriv * sample + sigma_deriv * noise
+
+        return scale * sample + sigma * noise, target, scale, sigma

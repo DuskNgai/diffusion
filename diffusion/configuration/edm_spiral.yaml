@@ -1,0 +1,13 @@
+_BASE_:
+  - ../../coach_pl/configuration/base.yaml
+  - dataset/spiral.yaml
+  - module/edm.yaml
+
+MODEL:
+  NAME: MLPWithEmbedding
+
+  IN_FEATURES: 2
+  HIDDEN_FEATURES: 128
+  OUT_FEATURES: 2
+  NUM_LAYERS: 4
+  ACTIVATION: GELU

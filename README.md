@@ -3,24 +3,25 @@
 This repository contains code related to Diffusion models and its extensions.
 - [Elucidating the Design Space of Diffusion-Based Generative Models](https://arxiv.org/abs/2206.00364)
 - [Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow](https://arxiv.org/abs/2209.03003)
+- [Mean Flows for One-step Generative Modeling](https://arxiv.org/abs/2505.13447)
 
 ## Setup
 
 First, download the codebase and the submodules:
 
 ```bash
-git clone https://github.com/DuskNgai/diffusion.git -o diffusion && cd diffusion
-git submodule update --init --recursive
+git clone https://github.com/DuskNgai/diffusion.git diffusion --recursive && cd diffusion
 ```
 
 Second, install the dependencies by manually installing them:
-
-```bash
-conda create -n diffusion python=3.11
-conda activate diffusion
-pip install torch torchvision
-pip install accelerate deepspeed diffusers fvcore h5py ipykernel jupyterlab lightning matplotlib numpy omegaconf pandas rich scikit-learn scipy seaborn tensorboard timm
-```
+- For Windows:
+    ```powershell
+    .\install.ps1
+    ```
+- For Linux or macOS:
+    ```bash
+    bash install.sh
+    ```
 
 ## Usage
 

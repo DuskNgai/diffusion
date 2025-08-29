@@ -1,45 +1,12 @@
-_BASE_: ../../coach_pl/configuration/base.yaml
-
 CRITERION:
-  NAME: RectifiedFlowCriterion
-
-DATALOADER:
-  PIN_MEMORY: True
-  DROP_LAST: False
-  PERSISTENT_WORKERS: True
-
-  TRAIN:
-    BATCH_SIZE: 64
-    NUM_WORKERS: 8
-
-DATASET:
-  NAME: CIFAR10Dataset
-  ROOT: null
-
-  TRANSFORM:
-    NAME: build_cifar_transform
-
-MODEL:
-  NAME: DhariwalUNet
-
-  NOISE_SCHEDULER:
-    NAME: RectifiedFlowTrainingNoiseScheduler
-    TIMESTEP_MEAN: 0.0
-    TIMESTEP_STD: 1.0
-
-  PREDICTION_TYPE: velocity
-  SIGMA_DATA: 0.5
-
-  IMG_SIZE: 32
-  IN_CHANS: 3
-  LABEL_DIM: 0
-  MODEL_KWARGS:
-    model_channels: 192
-    channel_mult: [1, 2, 3, 4]
+  NAME: MeanFlowCriterion
 
 MODULE:
-  NAME: TrainingModule
+  NAME: MeanFlowTrainingModule
   COMPILE: True
+
+  TIMESTEP_MEAN: 0.0
+  TIMESTEP_STD: 1.0
 
   OPTIMIZER:
     NAME: Adam
@@ -59,6 +26,12 @@ MODULE:
   EMA:
     ENABLED: True
     BASE_DECAY: 0.99
+
+  NOISE_SCHEDULER:
+    NAME: RectifiedFlowNoiseScheduler
+
+    PREDICTION_TYPE: velocity
+    SIGMA_DATA: 1.0
 
 TRAINER:
   STRATEGY: ddp         # Set to `auto`, `ddp`, `deepspeed_stage_2`, `deepspeed_stage_3` ...

@@ -34,10 +34,14 @@ class GaussianMixtureModel(ModelMixin, ConfigMixin):
         """
         The probability density function of the noisy samples generated from the Gaussian Mixture Model is given by:
         """
-        x = x.unsqueeze(1)  # Shape: [B, 1, 2]
-        weight = torch.softmax(-0.5 * (scale * self.mu - x).square().sum(dim=-1) / ((self.sigma * scale) ** 2 + sigma ** 2), dim=-1).unsqueeze(-1)
+        x = x.unsqueeze(1) # Shape: [B, 1, 2]
+
+        weight = torch.softmax(
+            -0.5 * (scale * self.mu - x).square().sum(dim=-1) / ((self.sigma * scale) ** 2 + sigma ** 2), dim=-1
+        ).unsqueeze(-1)
         score = (weight * (scale * self.mu - x)).sum(dim=1) / ((self.sigma * scale) ** 2 + sigma ** 2)
         return score
+
 
 # Using GaussianMixtureModelScheduler = GaussianModelScheduler
 

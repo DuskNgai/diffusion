@@ -4,7 +4,7 @@ from timm.data.constants import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 import torch
 from torchvision.transforms import v2
 
-from coach_pl.dataset.transform import TRANSFORM_REGISTRY
+from coach_pl.datamodule.transform import TRANSFORM_REGISTRY
 
 __all__ = [
     "build_cifar_transform",

@@ -1,3 +1,7 @@
+from abc import (
+    ABCMeta,
+    abstractmethod,
+)
 from typing import Any
 
 from omegaconf import DictConfig
@@ -7,27 +11,23 @@ from timm.optim import create_optimizer_v2
 from timm.scheduler import create_scheduler_v2
 import torch
 
-from coach_pl.configuration import configurable
 from coach_pl.criterion import build_criterion
 from coach_pl.model import build_model
-from coach_pl.module import MODULE_REGISTRY
 from coach_pl.utils.logging import setup_logger
 
-from diffusion.model import build_noise_scheduler
+from diffusion.module.scheduler import build_noise_scheduler
 from sampler import ContinuousTimeNoiseScheduler
 
 logger = setup_logger(__name__, rank_zero_only=True)
 
-__all__ = ["TrainingModule"]
+__all__ = ["DiffusionTrainingModule"]
 
 
-@MODULE_REGISTRY.register()
-class TrainingModule(LightningModule):
+class DiffusionTrainingModule(LightningModule, metaclass=ABCMeta):
     """
     Training module for diffusion model.
     """
 
-    @configurable
     def __init__(
         self,
         model: torch.nn.Module,
@@ -43,7 +43,9 @@ class TrainingModule(LightningModule):
         self.criterion = torch.compile(criterion) if cfg.MODULE.COMPILE else criterion
         self.noise_scheduler = noise_scheduler
 
-        self.batch_size = cfg.DATALOADER.TRAIN.BATCH_SIZE
+        logger.info(self.model)
+
+        self.batch_size = cfg.DATAMODULE.DATALOADER.TRAIN.BATCH_SIZE
 
         # Exponential moving average configuration
         self.ema_enabled = cfg.MODULE.EMA.ENABLED
@@ -85,9 +87,7 @@ class TrainingModule(LightningModule):
         )
 
         lr = self.base_lr * total_batch_size / 256
-        logger.info(
-            f"Learning rate ({lr:0.6g}) = base_lr ({self.base_lr:0.6g}) * total_batch_size ({total_batch_size}) / 256"
-        )
+        logger.info(f"Learning rate ({lr:0.6g}) = base_lr ({self.base_lr:0.6g}) * total_batch_size ({total_batch_size}) / 256")
 
         if self.ema_enabled:
             ema_decay = 1 - ((1 - self.ema_base_decay) * total_batch_size / 1024)
@@ -135,19 +135,6 @@ class TrainingModule(LightningModule):
         else:
             scheduler.step_update(self.global_step, metric)
 
-    def forward(self, model: torch.nn.Module, batch: Any) -> torch.Tensor:
-        # Sampling samples, noises, and timesteps
-        sample, condition = batch
-        noise = torch.randn_like(sample)
-        timestep = self.noise_scheduler.sample_timestep(sample)
-
-        noisy, target, scale, sigma = self.noise_scheduler.add_noise(sample, noise, timestep)
-        processed_noisy, processed_scale, processed_sigma = self.noise_scheduler.preprocess(noisy, scale, sigma)
-        unprocessed_output = model(processed_noisy, processed_scale, processed_sigma, condition)
-        output = self.noise_scheduler.postprocess(noisy, unprocessed_output, scale, sigma)
-        loss = self.criterion(output, target, scale, sigma)
-        return loss
-
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         loss = self.forward(self.model, batch)
         self.log("train/loss", loss, prog_bar=True, sync_dist=False, rank_zero_only=True)
@@ -170,3 +157,13 @@ class TrainingModule(LightningModule):
         if hasattr(model, "_orig_mod"):
             model = model._orig_mod
         checkpoint["model"] = model.state_dict()
+
+    # --------------------------------------------------------------------------------
+
+    @abstractmethod
+    def forward(self, model: torch.nn.Module, batch: Any) -> torch.Tensor:
+        raise NotImplementedError
+
+    @abstractmethod
+    def sample_timestep(self, sample: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError
