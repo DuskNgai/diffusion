@@ -40,15 +40,9 @@ It takes approximately 14 hours to train UNet on the CIFAR-10 dataset for 200 ep
 For example, you can train a unet model on cifar dataset using rectified flow with following command:
 ```bash
 python train.py \
---config-file diffusion/configuration/rf_cifar.yaml \
+--config-file diffusion/configuration/rectified_flow_cifar.yaml \
 --num-gpus 1 \
 --num-nodes 1 \
-OUTPUT_DIR output/rf_velocity_unet_cifar \
-DATASET.ROOT $PATH_TO_DATASET_ROOT
-```
-
-We recommend naming the configuration file and output directory with the following format:
-```txt
-Configuration file: <MODEL_NAME>_<PREDICTION_TYPE>_<DATASET_NAME>.yaml
-Output directory: output/<MODEL_NAME>_<PREDICTION_TYPE>_<DATASET_NAME>
+OUTPUT_DIR output/rectified_flow_velocity_unet_cifar \
+DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT
 ```

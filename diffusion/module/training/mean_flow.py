@@ -1,6 +1,8 @@
+from functools import partial
 from typing import Any
 
 import torch
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from coach_pl.module import MODULE_REGISTRY
 
@@ -15,15 +17,18 @@ class MeanFlowTrainingModule(RectifiedFlowTrainingModule):
     def forward(self, model: torch.nn.Module, batch: Any) -> torch.Tensor:
         # Sampling samples, noises, and timesteps
         sample, condition = batch
+        if self.num_classes == 0:
+            condition = None
         noise = torch.randn_like(sample)
         prev_timestep, curr_timestep = self.sample_timestep(sample)
 
         noisy, velocity, _, _ = self.noise_scheduler.add_noise(sample, noise, curr_timestep)
-        output, d_output_d_curr_timestep = torch.func.jvp(
-            model,
-            (noisy, prev_timestep, curr_timestep),
-            (velocity, torch.zeros_like(prev_timestep), torch.ones_like(curr_timestep)),
-        )
+        with sdpa_kernel(backends=SDPBackend.MATH):
+            output, d_output_d_curr_timestep = torch.func.jvp(
+                partial(model, c=condition),
+                (noisy, prev_timestep, curr_timestep),
+                (velocity, torch.zeros_like(prev_timestep), torch.ones_like(curr_timestep)),
+            )
         loss = self.criterion(output, velocity, d_output_d_curr_timestep, prev_timestep, curr_timestep)
         return loss
 

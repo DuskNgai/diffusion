@@ -43,14 +43,18 @@ class EDMCriterion(DiffusionCriterion):
     ) -> torch.Tensor:
         if self.prediction_type == "sample":
             weight = ((scale * self.sigma_data) ** 2 + sigma ** 2) / ((sigma * self.sigma_data) ** 2)
-            return (weight * (input - target).square()).mean()
+            loss = (weight * (input - target).square()).mean()
 
         elif self.prediction_type == "epsilon":
             weight = ((scale * self.sigma_data) ** 2 + sigma ** 2) / ((scale * self.sigma_data) ** 2)
-            return (weight * (input - target).square()).mean()
+            loss = (weight * (input - target).square()).mean()
 
         elif self.prediction_type == "velocity":
             raise NotImplementedError
 
         else:
             raise KeyError(f"Unknown prediction type: {self.prediction_type}")
+
+        return {
+            "loss": loss
+        }

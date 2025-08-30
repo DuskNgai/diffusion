@@ -21,14 +21,16 @@ class RectifiedFlowTrainingModule(DiffusionTrainingModule):
         model: torch.nn.Module,
         criterion: torch.nn.Module,
         noise_scheduler: ContinuousTimeNoiseScheduler,
+        cfg: DictConfig,
         timestep_mean: float,
         timestep_std: float,
-        cfg: DictConfig,
+        num_classes: int,
     ) -> None:
         super().__init__(model, criterion, noise_scheduler, cfg)
 
         self.timestep_mean = timestep_mean
         self.timestep_std = timestep_std
+        self.num_classes  = num_classes
 
     @classmethod
     def from_config(cls, cfg: DictConfig) -> dict[str, Any]:
@@ -36,16 +38,21 @@ class RectifiedFlowTrainingModule(DiffusionTrainingModule):
         args.update({
             "timestep_mean": cfg.MODULE.TIMESTEP_MEAN,
             "timestep_std": cfg.MODULE.TIMESTEP_STD,
+            "num_classes": cfg.MODEL.NUM_CLASSES,
         })
         return args
 
     def forward(self, model: torch.nn.Module, batch: Any) -> torch.Tensor:
         # Sampling samples, noises, and timesteps
         sample, condition = batch
+        if self.num_classes == 0:
+            condition = None
         noise = torch.randn_like(sample)
         timestep = self.sample_timestep(sample)
 
         noisy, target, scale, sigma = self.noise_scheduler.add_noise(sample, noise, timestep)
+        scale = scale.view(-1)
+        sigma = sigma.view(-1)
         output = model(noisy, scale, sigma, condition)
         loss = self.criterion(output, target, scale, sigma)
         return loss
@@ -56,6 +63,4 @@ class RectifiedFlowTrainingModule(DiffusionTrainingModule):
             t \in (0, 1)
         """
         timestep = torch.sigmoid(torch.randn(sample.shape[0], device=sample.device) * self.timestep_std + self.timestep_mean)
-        while timestep.dim() < sample.dim():
-            timestep = timestep.unsqueeze(-1)
         return timestep

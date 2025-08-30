@@ -2,4 +2,4 @@ _BASE_:
   - ../../coach_pl/configuration/base.yaml
   - dataset/cifar.yaml
   - model/dit.yaml
-  - module/rectified_flow.yaml
+  - module/mean_flow.yaml

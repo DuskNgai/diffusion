@@ -137,7 +137,10 @@ class DiffusionTrainingModule(LightningModule, metaclass=ABCMeta):
 
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         loss = self.forward(self.model, batch)
-        self.log("train/loss", loss, prog_bar=True, sync_dist=False, rank_zero_only=True)
+        self.log_dict({
+            "train/" + k: v
+            for k, v in loss.items()
+        }, prog_bar=True, sync_dist=False, rank_zero_only=True)
         return loss
 
     def on_train_batch_end(self, outputs: torch.Tensor | dict[str, Any] | None, batch: Any, batch_idx: int) -> None:
@@ -146,11 +149,17 @@ class DiffusionTrainingModule(LightningModule, metaclass=ABCMeta):
 
     def validation_step(self, batch: Any, batch_idx: int) -> None:
         loss = self.forward(self.ema_model, batch)
-        self.log("val/loss", loss, sync_dist=False, rank_zero_only=True)
+        self.log({
+            "val/" + k: v
+            for k, v in loss.items()
+        }, sync_dist=False, rank_zero_only=True)
 
     def test_step(self, batch: Any, batch_idx: int) -> None:
         loss = self.forward(self.ema_model, batch)
-        self.log("test/loss", loss, sync_dist=False, rank_zero_only=True)
+        self.log({
+            "test/" + k: v
+            for k, v in loss.items()
+        }, sync_dist=False, rank_zero_only=True)
 
     def on_save_checkpoint(self, checkpoint: dict[str, Any]) -> None:
         model = self.ema_model.module if self.ema_enabled else self.model

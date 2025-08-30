@@ -42,4 +42,9 @@ class MeanFlowCriterion(DiffusionCriterion):
         curr_timestep: torch.Tensor,
     ) -> torch.Tensor:
         y = target - (curr_timestep - prev_timestep) * d_output_d_curr_timestep
-        return adaptive_l2_loss(input - y.detach())
+        loss = adaptive_l2_loss(input - y.detach())
+        mse = (input - y).square().mean().detach()
+        return {
+            "loss": loss,
+            "mse": mse,
+        }

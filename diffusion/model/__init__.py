@@ -1,3 +1,4 @@
+from .dit import DiffusionTransformer
 from .mlp import MLPWithEmbedding
 from .unet import DhariwalUNet
 

@@ -1,0 +1,6 @@
+MODEL:
+  NAME: DiffusionTransformer
+
+  IMG_SIZE: 32
+  IN_CHANS: 3
+  NUM_CLASSES: 10

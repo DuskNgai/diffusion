@@ -1,14 +1,5 @@
 _BASE_:
   - ../../coach_pl/configuration/base.yaml
   - dataset/cifar.yaml
+  - model/dit.yaml
   - module/edm.yaml
-
-MODEL:
-  NAME: DhariwalUNet
-
-  IMG_SIZE: 32
-  IN_CHANS: 3
-  LABEL_DIM: 0
-  MODEL_KWARGS:
-    model_channels: 192
-    channel_mult: [1, 2, 3, 4]

@@ -40,4 +40,9 @@ class RectifiedFlowCriterion(DiffusionCriterion):
         scale: torch.Tensor,
         sigma: torch.Tensor,
     ) -> torch.Tensor:
-        return adaptive_l2_loss(input - target)
+        loss = adaptive_l2_loss(input - target)
+        mse = (input - target).square().mean().detach()
+        return {
+            "loss": loss,
+            "mse": mse,
+        }

@@ -35,7 +35,7 @@ MODULE:
 
 TRAINER:
   STRATEGY: ddp         # Set to `auto`, `ddp`, `deepspeed_stage_2`, `deepspeed_stage_3` ...
-  MIXED_PRECISION: True
+  MIXED_PRECISION: 16-mixed
   CHECKPOINT:
     EVERY_N_EPOCHS: 20  # Each time before a checkpoint is saved, the model will be evaluated on the validation set
 
