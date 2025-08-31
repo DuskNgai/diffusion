@@ -90,9 +90,9 @@ class DiffusionTrainingModule(LightningModule, metaclass=ABCMeta):
         logger.info(f"Learning rate ({lr:0.6g}) = base_lr ({self.base_lr:0.6g}) * total_batch_size ({total_batch_size}) / 256")
 
         if self.ema_enabled:
-            ema_decay = 1 - ((1 - self.ema_base_decay) * total_batch_size / 1024)
+            ema_decay = 1 - ((1 - self.ema_base_decay) * total_batch_size / 256)
             logger.info(
-                f"EMA decay ({ema_decay:0.6g}) = 1 - ((1 - ema_base_decay ({self.ema_base_decay:0.6g})) * total_batch_size ({total_batch_size}) / 1024)"
+                f"EMA decay ({ema_decay:0.6g}) = 1 - ((1 - ema_base_decay ({self.ema_base_decay:0.6g})) * total_batch_size ({total_batch_size}) / 256)"
             )
         else:
             ema_decay = 0.0
@@ -149,14 +149,14 @@ class DiffusionTrainingModule(LightningModule, metaclass=ABCMeta):
 
     def validation_step(self, batch: Any, batch_idx: int) -> None:
         loss = self.forward(self.ema_model, batch)
-        self.log({
+        self.log_dict({
             "val/" + k: v
             for k, v in loss.items()
         }, sync_dist=False, rank_zero_only=True)
 
     def test_step(self, batch: Any, batch_idx: int) -> None:
         loss = self.forward(self.ema_model, batch)
-        self.log({
+        self.log_dict({
             "test/" + k: v
             for k, v in loss.items()
         }, sync_dist=False, rank_zero_only=True)

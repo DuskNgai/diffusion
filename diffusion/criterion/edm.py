@@ -55,6 +55,8 @@ class EDMCriterion(DiffusionCriterion):
         else:
             raise KeyError(f"Unknown prediction type: {self.prediction_type}")
 
+        mse = (input - target).square().mean().detach()
         return {
-            "loss": loss
+            "loss": loss,
+            "mse": mse,
         }
