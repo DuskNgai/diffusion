@@ -80,12 +80,9 @@ def precompute_freqs_cis(grid_size: tuple[int, int], dim: int, theta: float = 10
         indexing="ij",
     )                                                                             # [H, W]
 
-    freqs_y = torch.einsum("hw, e->hwe", y, freqs)      # [H, W, E // 4]
-    freqs_x = torch.einsum("hw, e->hwe", x, freqs)      # [H, W, E // 4]
-    return torch.cat([
-        torch.polar(torch.ones_like(freqs_y), freqs_y),
-        torch.polar(torch.ones_like(freqs_x), freqs_x),
-    ], -1).reshape(1, 1, -1, dim // 2)                  # [1, H, W, E // 2]
+    freqs_y = torch.einsum("hw, e->hwe", y, freqs)                                                  # [H, W, E // 4]
+    freqs_x = torch.einsum("hw, e->hwe", x, freqs)                                                  # [H, W, E // 4]
+    return torch.cat([freqs_y.cos(), freqs_y.sin(), freqs_x.cos(), freqs_x.sin()], -1).unsqueeze(0) # [1, H, W, E]
 
 
 def apply_rotary_emb(
@@ -95,16 +92,30 @@ def apply_rotary_emb(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Apply the rotary positional embedding to the query and key tensors.
-    The RoPE we used here is the PaLM style RoPE.
     """
 
-    xq_ = xq.float().reshape(*xq.shape[:-1], -1, 2) # [B, N, L, E // 2, 2]
-    xk_ = xk.float().reshape(*xk.shape[:-1], -1, 2) # [B, N, L, E // 2, 2]
-    xq_ = torch.view_as_complex(xq_)                # [B, N, L, E // 2]
-    xk_ = torch.view_as_complex(xk_)                # [B, N, L, E // 2]
+    xq_real_y, xq_imag_y, xq_real_x, xq_imag_x = xq.float().chunk(4, dim=-1) # [B, N, L, E // 4]
+    xk_real_y, xk_imag_y, xk_real_x, xk_imag_x = xk.float().chunk(4, dim=-1) # [B, N, L, E // 4]
+    cos_y, sin_y, cos_x, sin_x = freqs_cis.unsqueeze(1).chunk(4, dim=-1)     # [B, 1, L, E // 4]
 
-    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(-2).type_as(xq) # [B, N, L, E]
-    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(-2).type_as(xk) # [B, N, L, E]
+    xq_out = torch.cat(
+        [
+            xq_real_y * cos_y - xq_imag_y * sin_y,
+            xq_real_y * sin_y + xq_imag_y * cos_y,
+            xq_real_x * cos_x - xq_imag_x * sin_x,
+            xq_real_x * sin_x + xq_imag_x * cos_x,
+        ],
+        dim=-1,
+    ).type_as(xq)                                  # [B, N, L, E]
+    xk_out = torch.cat(
+        [
+            xk_real_y * cos_y - xk_imag_y * sin_y,
+            xk_real_y * sin_y + xk_imag_y * cos_y,
+            xk_real_x * cos_x - xk_imag_x * sin_x,
+            xk_real_x * sin_x + xk_imag_x * cos_x,
+        ],
+        dim=-1,
+    ).type_as(xk)                                  # [B, N, L, E]
 
     return xq_out, xk_out
 
@@ -247,7 +258,9 @@ class DiffusionTransformer(nn.Module):
         self.blocks = nn.ModuleList([DiTBlock(dim=dim, num_heads=num_heads, mlp_ratio=mlp_ratio) for _ in range(depth)])
         self.final_layer = FinalLayer(dim=dim, patch_size=patch_size, out_dim=in_chans)
 
-        self.register_buffer("freqs_cis", precompute_freqs_cis(self.x_embedder.grid_size, dim // num_heads))
+        self.register_buffer(
+            "freqs_cis", precompute_freqs_cis(self.x_embedder.grid_size, dim // num_heads).reshape(1, self.x_embedder.num_patches, -1)
+        )
 
         self.initialize_weights()
 
