@@ -24,7 +24,7 @@ class DiffusionCriterion(nn.Module, metaclass=ABCMeta):
         raise NotImplementedError
 
 
-def adaptive_l2_loss(error: torch.Tensor, gamma=0.5, eps=1e-3) -> torch.Tensor:
+def adaptive_l2_loss(error: torch.Tensor, gamma=0.0, eps=1e-3) -> torch.Tensor:
     """
     Adaptive L2 loss:
         sg(w) * ||Δ||_2^2, where w = (||Δ||^2 + eps)^{gamma - 1}
@@ -37,7 +37,8 @@ def adaptive_l2_loss(error: torch.Tensor, gamma=0.5, eps=1e-3) -> torch.Tensor:
     Returns:
         Scalar loss
     """
-    loss = torch.einsum("b... -> b", error.square()) # ||Δ||^2
+    error = error.flatten(1)
+    loss = error.square().sum(dim=-1) # ||Δ||^2
     p = 1.0 - gamma
     w = 1.0 / (loss + eps).pow(p)
     return (w.detach() * loss).mean()

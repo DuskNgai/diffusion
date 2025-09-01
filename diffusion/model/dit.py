@@ -29,7 +29,6 @@ class TimestepEmbedder(nn.Module):
     def timestep_embedding(t: torch.Tensor, dim: int, max_period: float = 10000.0) -> torch.Tensor:
         half_dim = dim // 2
         freqs = torch.exp(-math.log(max_period) * torch.arange(0, half_dim, dtype=torch.float32) / half_dim).to(device=t.device)
-        # args = t[:, None].float() * freqs[None, :]
         args = torch.outer(t.view(-1).float(), freqs)
         embedding = torch.cat([torch.cos(args), torch.sin(args)], dim=-1)
         if dim % 2 == 1:
@@ -176,7 +175,7 @@ class DiTBlock(nn.Module):
         self,
         dim: int = 384,
         num_heads: int = 16,
-        mlp_ratio: float = 4.0,
+        mlp_ratio: float = 8.0 / 3.0,
     ) -> None:
         super().__init__()
 

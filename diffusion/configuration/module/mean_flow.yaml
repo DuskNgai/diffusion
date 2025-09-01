@@ -5,8 +5,9 @@ MODULE:
   NAME: MeanFlowTrainingModule
   COMPILE: True
 
-  TIMESTEP_MEAN: 0.0
+  TIMESTEP_MEAN: -0.4
   TIMESTEP_STD: 1.0
+  FLOW_RATIO: 0.5
 
   OPTIMIZER:
     NAME: Adam
