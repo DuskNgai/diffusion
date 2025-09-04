@@ -8,12 +8,6 @@ export TIMM_FUSED_ATTN=1
 PATH_TO_DATASET_ROOT=
 
 python train.py \
---config-file diffusion/configuration/mean_flow_cifar.yaml \
-OUTPUT_DIR output/mean_flow/velocity_dit_cifar_unconditional \
-DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT \
-MODEL.NUM_CLASSES 0
-
-python train.py \
 --config-file diffusion/configuration/edm_cifar.yaml \
 OUTPUT_DIR output/edm/sample_dit_cifar_unconditional \
 DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT \
@@ -29,5 +23,11 @@ MODEL.NUM_CLASSES 0
 python train.py \
 --config-file diffusion/configuration/rectified_flow_cifar.yaml \
 OUTPUT_DIR output/rectified_flow/velocity_dit_cifar_unconditional \
+DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT \
+MODEL.NUM_CLASSES 0
+
+python train.py \
+--config-file diffusion/configuration/mean_flow_cifar.yaml \
+OUTPUT_DIR output/mean_flow/velocity_dit_cifar_unconditional \
 DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT \
 MODEL.NUM_CLASSES 0

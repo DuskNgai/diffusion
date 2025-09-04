@@ -6,10 +6,7 @@ import torch
 from coach_pl.configuration import configurable
 from coach_pl.criterion import CRITERION_REGISTRY
 
-from .base import (
-    adaptive_l2_loss,
-    DiffusionCriterion,
-)
+from .base import DiffusionCriterion
 
 __all__ = ["RectifiedFlowCriterion"]
 

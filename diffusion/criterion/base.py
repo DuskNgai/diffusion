@@ -27,7 +27,7 @@ class DiffusionCriterion(nn.Module, metaclass=ABCMeta):
 def adaptive_l2_loss(error: torch.Tensor, gamma=0.0, eps=1e-3) -> torch.Tensor:
     """
     Adaptive L2 loss:
-        sg(w) * ||Δ||_2^2, where w = (||Δ||^2 + eps)^{gamma - 1}
+        sg(w) * ||Δ||_2^2, where w = 1 / (||Δ||^2 + eps)^{1 - gamma}
 
     Args:
         `error`: Tensor of shape [B, ...]
@@ -37,8 +37,6 @@ def adaptive_l2_loss(error: torch.Tensor, gamma=0.0, eps=1e-3) -> torch.Tensor:
     Returns:
         Scalar loss
     """
-    error = error.flatten(1)
-    loss = error.square().sum(dim=-1) # ||Δ||^2
-    p = 1.0 - gamma
-    w = 1.0 / (loss + eps).pow(p)
+    loss = error.square().flatten(1).sum(dim=-1) # ||Δ||^2
+    w = 1.0 / (loss + eps).pow(1.0 - gamma)
     return (w.detach() * loss).mean()
