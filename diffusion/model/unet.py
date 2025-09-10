@@ -6,6 +6,10 @@
 # work. If not, see http://creativecommons.org/licenses/by-nc-sa/4.0/
 """Model architectures and preconditioning schemes used in the paper
 "Elucidating the Design Space of Diffusion-Based Generative Models"."""
+from __future__ import annotations
+
+import math
+from typing import Any
 
 from diffusers.models import ModelMixin
 import numpy as np
@@ -98,11 +102,7 @@ class Conv2d(torch.nn.Module):
 
         if self.fused_resample and self.up and w is not None:
             x = torch.nn.functional.conv_transpose2d(
-                x,
-                f.mul(4).tile([self.in_channels, 1, 1, 1]),
-                groups=self.in_channels,
-                stride=2,
-                padding=max(f_pad - w_pad, 0),
+                x, f.mul(4).tile([self.in_channels, 1, 1, 1]), groups=self.in_channels, stride=2, padding=max(f_pad - w_pad, 0)
             )
             x = torch.nn.functional.conv2d(x, w, padding=max(w_pad - f_pad, 0))
         elif self.fused_resample and self.down and w is not None:
@@ -111,20 +111,10 @@ class Conv2d(torch.nn.Module):
         else:
             if self.up:
                 x = torch.nn.functional.conv_transpose2d(
-                    x,
-                    f.mul(4).tile([self.in_channels, 1, 1, 1]),
-                    groups=self.in_channels,
-                    stride=2,
-                    padding=f_pad,
+                    x, f.mul(4).tile([self.in_channels, 1, 1, 1]), groups=self.in_channels, stride=2, padding=f_pad
                 )
             if self.down:
-                x = torch.nn.functional.conv2d(
-                    x,
-                    f.tile([self.in_channels, 1, 1, 1]),
-                    groups=self.in_channels,
-                    stride=2,
-                    padding=f_pad,
-                )
+                x = torch.nn.functional.conv2d(x, f.tile([self.in_channels, 1, 1, 1]), groups=self.in_channels, stride=2, padding=f_pad)
             if w is not None:
                 x = torch.nn.functional.conv2d(x, w, padding=w_pad)
         if b is not None:
@@ -134,6 +124,32 @@ class Conv2d(torch.nn.Module):
 
 #----------------------------------------------------------------------------
 # Group normalization.
+
+
+def group_norm(input: torch.Tensor, num_groups: int, weight: torch.Tensor, bias: torch.Tensor, eps: float = 1e-5) -> torch.Tensor:
+    N, C, *rest = input.shape
+    assert C % num_groups == 0, "num_channels must be divisible by num_groups"
+
+    # Reshape to (N, num_groups, C // num_groups, *spatial)
+    reshaped = input.view(N, num_groups, C // num_groups, *rest)
+
+    # Compute mean and variance over (C // G, *spatial)
+    dim = tuple(range(2, reshaped.dim()))
+    mean = reshaped.mean(dim=dim, keepdim=True)
+    var = reshaped.var(dim=dim, keepdim=True, unbiased=False)
+
+    # Normalize
+    normalized = (reshaped - mean) / torch.sqrt(var + eps)
+    normalized = normalized.view(N, C, *rest)
+
+    # Apply affine if provided
+    shape = [1, -1] + [1] * (normalized.dim() - 2)
+    if weight is not None:
+        normalized = normalized * weight.view(*shape)
+    if bias is not None:
+        normalized = normalized + bias.view(*shape)
+
+    return normalized
 
 
 class GroupNorm(torch.nn.Module):
@@ -146,13 +162,7 @@ class GroupNorm(torch.nn.Module):
         self.bias = torch.nn.Parameter(torch.zeros(num_channels))
 
     def forward(self, x):
-        x = torch.nn.functional.group_norm(
-            x,
-            num_groups=self.num_groups,
-            weight=self.weight.to(x.dtype),
-            bias=self.bias.to(x.dtype),
-            eps=self.eps,
-        )
+        x = group_norm(x, num_groups=self.num_groups, weight=self.weight.to(x.dtype), bias=self.bias.to(x.dtype), eps=self.eps)
         return x
 
 
@@ -162,30 +172,34 @@ class GroupNorm(torch.nn.Module):
 # inputs/outputs/gradients to conserve memory.
 
 
-class AttentionOp(torch.autograd.Function):
+class QKVAttention(torch.nn.Module):
+    """
+    A module which performs QKV attention and splits in a different order.
+    """
 
-    @staticmethod
-    def forward(ctx, q, k):
-        w = torch.einsum(
-            'ncq,nck->nqk',
-            q.to(torch.float32),
-            (k / np.sqrt(k.shape[1])).to(torch.float32),
-        ).softmax(dim=2).to(q.dtype)
-        ctx.save_for_backward(q, k, w)
-        return w
+    def __init__(self, n_heads):
+        super().__init__()
+        self.n_heads = n_heads
 
-    @staticmethod
-    def backward(ctx, dw):
-        q, k, w = ctx.saved_tensors
-        db = torch._softmax_backward_data(
-            grad_output=dw.to(torch.float32),
-            output=w.to(torch.float32),
-            dim=2,
-            input_dtype=torch.float32,
-        )
-        dq = torch.einsum('nck,nqk->ncq', k.to(torch.float32), db).to(q.dtype) / np.sqrt(k.shape[1])
-        dk = torch.einsum('ncq,nqk->nck', q.to(torch.float32), db).to(k.dtype) / np.sqrt(k.shape[1])
-        return dq, dk
+    def forward(self, qkv):
+        """
+        Apply QKV attention.
+        :param qkv: an [N x (3 * H * C) x T] tensor of Qs, Ks, and Vs.
+        :return: an [N x (H * C) x T] tensor after attention.
+        """
+        bs, width, length = qkv.shape
+        assert width % (3 * self.n_heads) == 0
+        ch = width // (3 * self.n_heads)
+        q, k, v = qkv.chunk(3, dim=1)
+        scale = 1 / math.sqrt(math.sqrt(ch))
+        weight = torch.einsum(
+            "bct, bcs -> bts",
+            (q * scale).view(bs * self.n_heads, ch, length),
+            (k * scale).view(bs * self.n_heads, ch, length),
+        )                                                    # More stable with f16 than dividing afterwards
+        weight = torch.softmax(weight.float(), dim=-1).type(weight.dtype)
+        a = torch.einsum("bts, bcs -> bct", weight, v.reshape(bs * self.n_heads, ch, length))
+        return a.reshape(bs, -1, length)
 
 
 #----------------------------------------------------------------------------
@@ -222,18 +236,12 @@ class UNetBlock(torch.nn.Module):
         self.emb_channels = emb_channels
         self.num_heads = 0 if not attention else num_heads if num_heads is not None else out_channels // channels_per_head
         self.dropout = dropout
-        self.skip_scale = skip_scale
+        self.skip_scale = float(skip_scale)
         self.adaptive_scale = adaptive_scale
 
         self.norm0 = GroupNorm(num_channels=in_channels, eps=eps)
         self.conv0 = Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel=3,
-            up=up,
-            down=down,
-            resample_filter=resample_filter,
-            **init,
+            in_channels=in_channels, out_channels=out_channels, kernel=3, up=up, down=down, resample_filter=resample_filter, **init
         )
         self.affine = Linear(in_features=emb_channels, out_features=out_channels * (2 if adaptive_scale else 1), **init)
         self.norm1 = GroupNorm(num_channels=out_channels, eps=eps)
@@ -249,16 +257,13 @@ class UNetBlock(torch.nn.Module):
                 up=up,
                 down=down,
                 resample_filter=resample_filter,
-                **init,
+                **init
             )
 
         if self.num_heads:
             self.norm2 = GroupNorm(num_channels=out_channels, eps=eps)
             self.qkv = Conv2d(
-                in_channels=out_channels,
-                out_channels=out_channels * 3,
-                kernel=1,
-                **(init_attn if init_attn is not None else init),
+                in_channels=out_channels, out_channels=out_channels * 3, kernel=1, **(init_attn if init_attn is not None else init)
             )
             self.proj = Conv2d(in_channels=out_channels, out_channels=out_channels, kernel=1, **init_zero)
 
@@ -278,9 +283,9 @@ class UNetBlock(torch.nn.Module):
         x = x * self.skip_scale
 
         if self.num_heads:
-            q, k, v = self.qkv(self.norm2(x)).reshape(x.shape[0] * self.num_heads, x.shape[1] // self.num_heads, 3, -1).unbind(2)
-            w = AttentionOp.apply(q, k)
-            a = torch.einsum('nqk,nck->ncq', w, v)
+            qkv = self.qkv(self.norm2(x))
+            qkv = qkv.reshape(qkv.shape[0], qkv.shape[1], -1)
+            a = QKVAttention(n_heads=self.num_heads)(qkv)
             x = self.proj(a.reshape(*x.shape)).add_(x)
             x = x * self.skip_scale
         return x
@@ -330,14 +335,16 @@ class FourierEmbedding(torch.nn.Module):
 # available at https://github.com/yang-song/score_sde_pytorch
 
 
+@MODEL_REGISTRY.register()
 class SongUNet(torch.nn.Module):
 
+    @configurable
     def __init__(
         self,
         img_resolution,              # Image resolution at input/output.
         in_channels,                 # Number of color channels at input.
         out_channels,                # Number of color channels at output.
-        label_dim=0,                 # Number of class labels, 0 = unconditional.
+        num_classes=0,               # Number of class labels, 0 = unconditional.
         augment_dim=0,               # Augmentation label dimensionality, 0 = no augmentation.
         model_channels=128,          # Base multiplier for the number of channels.
         channel_mult=[1, 2, 2, 2],   # Per-resolution multipliers for the number of channels.
@@ -379,16 +386,17 @@ class SongUNet(torch.nn.Module):
 
         # Mapping.
         self.map_noise = PositionalEmbedding(
-            num_channels=noise_channels, endpoint=True
+            num_channels=noise_channels,
+            endpoint=True,
         ) if embedding_type == 'positional' else FourierEmbedding(num_channels=noise_channels)
-        self.map_label = Linear(in_features=label_dim, out_features=noise_channels, **init) if label_dim else None
+        self.map_label = Linear(in_features=num_classes, out_features=noise_channels * 2, **init) if num_classes else None
         self.map_augment = Linear(
             in_features=augment_dim,
             out_features=noise_channels,
             bias=False,
             **init,
         ) if augment_dim else None
-        self.map_layer0 = Linear(in_features=noise_channels, out_features=emb_channels, **init)
+        self.map_layer0 = Linear(in_features=noise_channels * 2, out_features=emb_channels, **init)
         self.map_layer1 = Linear(in_features=emb_channels, out_features=emb_channels, **init)
 
         # Encoder.
@@ -481,12 +489,26 @@ class SongUNet(torch.nn.Module):
                     **init_zero,
                 )
 
-    def forward(self, x, noise_labels, class_labels, augment_labels=None):
+    @classmethod
+    def from_config(cls, cfg: DictConfig) -> dict[str, Any]:
+        return {
+            "img_resolution": cfg.MODEL.IMG_SIZE,
+            "in_channels": cfg.MODEL.IN_CHANS,
+            "out_channels": cfg.MODEL.IN_CHANS,
+            "num_classes": cfg.MODEL.NUM_CLASSES,
+            **cfg.MODEL.MODEL_KWARGS,
+        }
+
+    def forward(self, x: torch.Tensor, s: torch.Tensor, t: torch.Tensor, c: torch.Tensor | None = None, augment_labels=None):
         # Mapping.
-        emb = self.map_noise(noise_labels)
-        emb = emb.reshape(emb.shape[0], 2, -1).flip(1).reshape(*emb.shape) # swap sin/cos
+        emb_s = self.map_noise(s.view(-1))
+        emb_s = emb_s.reshape(emb_s.shape[0], 2, -1).flip(1).reshape(*emb_s.shape) # swap sin/cos
+        emb_t = self.map_noise(t.view(-1))
+        emb_t = emb_t.reshape(emb_t.shape[0], 2, -1).flip(1).reshape(*emb_t.shape) # swap sin/cos
+        emb = torch.cat([emb_s, emb_t], dim=1)
+
         if self.map_label is not None:
-            tmp = class_labels
+            tmp = torch.nn.functional.one_hot(c, num_classes=self.map_label.in_features)
             if self.training and self.label_dropout:
                 tmp = tmp * (torch.rand([x.shape[0], 1], device=x.device) >= self.label_dropout).to(tmp.dtype)
             emb = emb + self.map_label(tmp * np.sqrt(self.map_label.in_features))
@@ -543,7 +565,7 @@ class DhariwalUNet(ModelMixin):
         img_resolution,                # Image resolution at input/output.
         in_channels,                   # Number of color channels at input.
         out_channels,                  # Number of color channels at output.
-        label_dim=0,                   # Number of class labels, 0 = unconditional.
+        num_classes=0,                 # Number of class labels, 0 = unconditional.
         augment_dim=0,                 # Augmentation label dimensionality, 0 = no augmentation.
         model_channels=192,            # Base multiplier for the number of channels.
         channel_mult=[1, 2, 3, 4],     # Per-resolution multipliers for the number of channels.
@@ -572,19 +594,19 @@ class DhariwalUNet(ModelMixin):
         self.map_noise = PositionalEmbedding(num_channels=model_channels)
         self.map_augment = Linear(
             in_features=augment_dim,
-            out_features=model_channels,
+            out_features=model_channels * 2,
             bias=False,
             **init_zero,
         ) if augment_dim else None
-        self.map_layer0 = Linear(in_features=model_channels, out_features=emb_channels, **init)
+        self.map_layer0 = Linear(in_features=model_channels * 2, out_features=emb_channels, **init)
         self.map_layer1 = Linear(in_features=emb_channels, out_features=emb_channels, **init)
         self.map_label = Linear(
-            in_features=label_dim,
+            in_features=num_classes,
             out_features=emb_channels,
             bias=False,
             init_mode='kaiming_normal',
-            init_weight=np.sqrt(label_dim),
-        ) if label_dim else None
+            init_weight=np.sqrt(num_classes),
+        ) if num_classes else None
 
         # Encoder.
         self.enc = torch.nn.ModuleDict()
@@ -640,24 +662,27 @@ class DhariwalUNet(ModelMixin):
         self.out_conv = Conv2d(in_channels=cout, out_channels=out_channels, kernel=3, **init_zero)
 
     @classmethod
-    def from_config(cls, cfg: DictConfig):
+    def from_config(cls, cfg: DictConfig) -> dict[str, Any]:
         return {
             "img_resolution": cfg.MODEL.IMG_SIZE,
             "in_channels": cfg.MODEL.IN_CHANS,
             "out_channels": cfg.MODEL.IN_CHANS,
-            "label_dim": cfg.MODEL.LABEL_DIM,
+            "num_classes": cfg.MODEL.NUM_CLASSES,
             **cfg.MODEL.MODEL_KWARGS,
         }
 
-    def forward(self, x, noise_labels, class_labels, augment_labels=None):
+    def forward(self, x: torch.Tensor, s: torch.Tensor, t: torch.Tensor, c: torch.Tensor | None = None, augment_labels=None):
         # Mapping.
-        emb = self.map_noise(noise_labels.flatten())
+        emb_s = self.map_noise(s.view(-1))
+        emb_t = self.map_noise(t.view(-1))
+        emb = torch.cat([emb_s, emb_t], dim=1)
+
         if self.map_augment is not None and augment_labels is not None:
             emb = emb + self.map_augment(augment_labels)
         emb = silu(self.map_layer0(emb))
         emb = self.map_layer1(emb)
         if self.map_label is not None:
-            tmp = class_labels
+            tmp = torch.nn.functional.one_hot(c, num_classes=self.map_label.in_features)
             if self.training and self.label_dropout:
                 tmp = tmp * (torch.rand([x.shape[0], 1], device=x.device) >= self.label_dropout).to(tmp.dtype)
             emb = emb + self.map_label(tmp)
@@ -676,203 +701,3 @@ class DhariwalUNet(ModelMixin):
             x = block(x, emb)
         x = self.out_conv(silu(self.out_norm(x)))
         return x
-
-
-#----------------------------------------------------------------------------
-# Preconditioning corresponding to the variance preserving (VP) formulation
-# from the paper "Score-Based Generative Modeling through Stochastic
-# Differential Equations".
-
-
-class VPPrecond(torch.nn.Module):
-
-    def __init__(
-        self,
-        img_resolution,                     # Image resolution.
-        img_channels,                       # Number of color channels.
-        label_dim=0,                        # Number of class labels, 0 = unconditional.
-        use_fp16=False,                     # Execute the underlying model at FP16 precision?
-        beta_d=19.9,                        # Extent of the noise level schedule.
-        beta_min=0.1,                       # Initial slope of the noise level schedule.
-        M=1000,                             # Original number of timesteps in the DDPM formulation.
-        epsilon_t=1e-5,                     # Minimum t-value used during training.
-        model_type='SongUNet',              # Class name of the underlying model.
-        **model_kwargs,                     # Keyword arguments for the underlying model.
-    ):
-        super().__init__()
-        self.img_resolution = img_resolution
-        self.img_channels = img_channels
-        self.label_dim = label_dim
-        self.use_fp16 = use_fp16
-        self.beta_d = beta_d
-        self.beta_min = beta_min
-        self.M = M
-        self.epsilon_t = epsilon_t
-        self.sigma_min = float(self.sigma(epsilon_t))
-        self.sigma_max = float(self.sigma(1))
-        self.model = globals()[model_type](
-            img_resolution=img_resolution,
-            in_channels=img_channels,
-            out_channels=img_channels,
-            label_dim=label_dim,
-            **model_kwargs,
-        )
-
-    def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):
-        x = x.to(torch.float32)
-        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
-        class_labels = None if self.label_dim == 0 else torch.zeros(
-            [1, self.label_dim], device=x.device
-        ) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
-        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
-
-        c_skip = 1
-        c_out = -sigma
-        c_in = 1 / (sigma ** 2 + 1).sqrt()
-        c_noise = (self.M - 1) * self.sigma_inv(sigma)
-
-        F_x = self.model((c_in * x).to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
-        assert F_x.dtype == dtype
-        D_x = c_skip * x + c_out * F_x.to(torch.float32)
-        return D_x
-
-    def sigma(self, t):
-        t = torch.as_tensor(t)
-        return ((0.5 * self.beta_d * (t ** 2) + self.beta_min * t).exp() - 1).sqrt()
-
-    def sigma_inv(self, sigma):
-        sigma = torch.as_tensor(sigma)
-        return ((self.beta_min ** 2 + 2 * self.beta_d * (1 + sigma ** 2).log()).sqrt() - self.beta_min) / self.beta_d
-
-    def round_sigma(self, sigma):
-        return torch.as_tensor(sigma)
-
-
-#----------------------------------------------------------------------------
-# Preconditioning corresponding to the variance exploding (VE) formulation
-# from the paper "Score-Based Generative Modeling through Stochastic
-# Differential Equations".
-
-
-class VEPrecond(torch.nn.Module):
-
-    def __init__(
-        self,
-        img_resolution,                     # Image resolution.
-        img_channels,                       # Number of color channels.
-        label_dim=0,                        # Number of class labels, 0 = unconditional.
-        use_fp16=False,                     # Execute the underlying model at FP16 precision?
-        sigma_min=0.02,                     # Minimum supported noise level.
-        sigma_max=100,                      # Maximum supported noise level.
-        model_type='SongUNet',              # Class name of the underlying model.
-        **model_kwargs,                     # Keyword arguments for the underlying model.
-    ):
-        super().__init__()
-        self.img_resolution = img_resolution
-        self.img_channels = img_channels
-        self.label_dim = label_dim
-        self.use_fp16 = use_fp16
-        self.sigma_min = sigma_min
-        self.sigma_max = sigma_max
-        self.model = globals()[model_type](
-            img_resolution=img_resolution,
-            in_channels=img_channels,
-            out_channels=img_channels,
-            label_dim=label_dim,
-            **model_kwargs,
-        )
-
-    def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):
-        x = x.to(torch.float32)
-        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
-        class_labels = None if self.label_dim == 0 else torch.zeros(
-            [1, self.label_dim], device=x.device
-        ) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
-        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
-
-        c_skip = 1
-        c_out = sigma
-        c_in = 1
-        c_noise = (0.5 * sigma).log()
-
-        F_x = self.model((c_in * x).to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
-        assert F_x.dtype == dtype
-        D_x = c_skip * x + c_out * F_x.to(torch.float32)
-        return D_x
-
-    def round_sigma(self, sigma):
-        return torch.as_tensor(sigma)
-
-
-#----------------------------------------------------------------------------
-# Preconditioning corresponding to improved DDPM (iDDPM) formulation from
-# the paper "Improved Denoising Diffusion Probabilistic Models".
-
-
-class iDDPMPrecond(torch.nn.Module):
-
-    def __init__(
-        self,
-        img_resolution,                     # Image resolution.
-        img_channels,                       # Number of color channels.
-        label_dim=0,                        # Number of class labels, 0 = unconditional.
-        use_fp16=False,                     # Execute the underlying model at FP16 precision?
-        C_1=0.001,                          # Timestep adjustment at low noise levels.
-        C_2=0.008,                          # Timestep adjustment at high noise levels.
-        M=1000,                             # Original number of timesteps in the DDPM formulation.
-        model_type='DhariwalUNet',          # Class name of the underlying model.
-        **model_kwargs,                     # Keyword arguments for the underlying model.
-    ):
-        super().__init__()
-        self.img_resolution = img_resolution
-        self.img_channels = img_channels
-        self.label_dim = label_dim
-        self.use_fp16 = use_fp16
-        self.C_1 = C_1
-        self.C_2 = C_2
-        self.M = M
-        self.model = globals()[model_type](
-            img_resolution=img_resolution,
-            in_channels=img_channels,
-            out_channels=img_channels * 2,
-            label_dim=label_dim,
-            **model_kwargs,
-        )
-
-        u = torch.zeros(M + 1)
-        for j in range(M, 0, -1): # M, ..., 1
-            u[j - 1] = ((u[j] ** 2 + 1) / (self.alpha_bar(j - 1) / self.alpha_bar(j)).clip(min=C_1) - 1).sqrt()
-        self.register_buffer('u', u)
-        self.sigma_min = float(u[M - 1])
-        self.sigma_max = float(u[0])
-
-    def forward(self, x, sigma, class_labels=None, force_fp32=False, **model_kwargs):
-        x = x.to(torch.float32)
-        sigma = sigma.to(torch.float32).reshape(-1, 1, 1, 1)
-        class_labels = None if self.label_dim == 0 else torch.zeros(
-            [1, self.label_dim], device=x.device
-        ) if class_labels is None else class_labels.to(torch.float32).reshape(-1, self.label_dim)
-        dtype = torch.float16 if (self.use_fp16 and not force_fp32 and x.device.type == 'cuda') else torch.float32
-
-        c_skip = 1
-        c_out = -sigma
-        c_in = 1 / (sigma ** 2 + 1).sqrt()
-        c_noise = self.M - 1 - self.round_sigma(sigma, return_index=True).to(torch.float32)
-
-        F_x = self.model((c_in * x).to(dtype), c_noise.flatten(), class_labels=class_labels, **model_kwargs)
-        assert F_x.dtype == dtype
-        D_x = c_skip * x + c_out * F_x[:, : self.img_channels].to(torch.float32)
-        return D_x
-
-    def alpha_bar(self, j):
-        j = torch.as_tensor(j)
-        return (0.5 * np.pi * j / self.M / (self.C_2 + 1)).sin() ** 2
-
-    def round_sigma(self, sigma, return_index=False):
-        sigma = torch.as_tensor(sigma)
-        index = torch.cdist(
-            sigma.to(self.u.device).to(torch.float32).reshape(1, -1, 1),
-            self.u.reshape(1, -1, 1),
-        ).argmin(2)
-        result = index if return_index else self.u[index.flatten()].to(sigma.dtype)
-        return result.reshape(sigma.shape).to(sigma.device)

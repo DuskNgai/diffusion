@@ -1,0 +1,6 @@
+_BASE_:
+  - ../../coach_pl/configuration/base.yaml
+  - criterion/mean_flow.yaml
+  - dataset/cifar.yaml
+  - model/unet.yaml
+  - module/mean_flow.yaml

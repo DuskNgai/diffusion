@@ -18,10 +18,7 @@ class RectifiedFlowCriterion(DiffusionCriterion):
     """
 
     @configurable
-    def __init__(
-        self,
-        prediction_type: str,
-    ) -> None:
+    def __init__(self, prediction_type: str) -> None:
         super().__init__(prediction_type=prediction_type)
 
     @classmethod
@@ -30,13 +27,7 @@ class RectifiedFlowCriterion(DiffusionCriterion):
             "prediction_type": cfg.MODULE.NOISE_SCHEDULER.PREDICTION_TYPE,
         }
 
-    def forward(
-        self,
-        input: torch.Tensor,
-        target: torch.Tensor,
-        scale: torch.Tensor,
-        sigma: torch.Tensor,
-    ) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, target: torch.Tensor, scale: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
         loss = (input - target).square().mean()
         mse = loss.detach()
         return {

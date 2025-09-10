@@ -3,7 +3,7 @@ from typing import Any
 
 from omegaconf import DictConfig
 import torch
-from torch.nn.attention import SDPBackend, sdpa_kernel
+from torch.nn.attention import sdpa_kernel, SDPBackend
 
 from coach_pl.configuration import configurable
 from coach_pl.module import MODULE_REGISTRY
@@ -50,13 +50,18 @@ class MeanFlowTrainingModule(RectifiedFlowTrainingModule):
         prev_timestep, curr_timestep = self.sample_timestep(sample)
 
         noisy, velocity, _, _ = self.noise_scheduler.add_noise(sample, noise, curr_timestep)
-        with sdpa_kernel(backends=SDPBackend.MATH):
-            output, d_output_d_curr_timestep = torch.func.jvp(
-                partial(model, c=condition),
-                (noisy, prev_timestep, curr_timestep),
-                (velocity, torch.zeros_like(prev_timestep), torch.ones_like(curr_timestep)),
-            )
-        loss = self.criterion(output, velocity, d_output_d_curr_timestep, prev_timestep, curr_timestep)
+        with torch.autocast("cuda", enabled=False):
+            with sdpa_kernel(backends=SDPBackend.MATH):
+                d_prev_timestep_d_curr_timestep = torch.zeros_like(prev_timestep)
+                d_curr_timestep_d_curr_timestep = torch.ones_like(curr_timestep)
+                output, d_output_d_curr_timestep = torch.func.jvp(
+                    partial(model, c=condition),
+                    (noisy, prev_timestep, curr_timestep),
+                    (velocity, d_prev_timestep_d_curr_timestep, d_curr_timestep_d_curr_timestep),
+                )
+            target = (velocity - (curr_timestep - prev_timestep) * d_output_d_curr_timestep).detach()
+            loss = self.criterion(output, target)
+
         return loss
 
     def sample_timestep(self, sample: torch.Tensor) -> torch.Tensor:

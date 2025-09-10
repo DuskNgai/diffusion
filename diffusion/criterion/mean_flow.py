@@ -6,12 +6,27 @@ import torch
 from coach_pl.configuration import configurable
 from coach_pl.criterion import CRITERION_REGISTRY
 
-from .base import (
-    adaptive_l2_loss,
-    DiffusionCriterion,
-)
+from .base import DiffusionCriterion
 
 __all__ = ["MeanFlowCriterion"]
+
+
+def adaptive_l2_loss(error: torch.Tensor, gamma: float = 0.0, eps: float = 1e-3) -> torch.Tensor:
+    """
+    Adaptive L2 loss:
+        sg(w) * ||Δ||_2^2, where w = 1 / (||Δ||^2 + eps)^{1 - gamma}
+
+    Args:
+        `error` (torch.Tensor): Tensor of shape [B, ...]
+        `gamma` (float): Power used in original ||Δ||^{2 * gamma} loss
+        `eps` (float): Small constant for stability
+
+    Returns:
+        Scalar loss
+    """
+    loss = error.square().flatten(1).sum(dim=-1) # ||Δ||^2
+    w = 1.0 / (loss.detach() + eps).pow(1.0 - gamma)
+    return (w * loss).mean()
 
 
 @CRITERION_REGISTRY.register()
@@ -21,10 +36,7 @@ class MeanFlowCriterion(DiffusionCriterion):
     """
 
     @configurable
-    def __init__(
-        self,
-        prediction_type: str,
-    ) -> None:
+    def __init__(self, prediction_type: str) -> None:
         super().__init__(prediction_type=prediction_type)
 
     @classmethod
@@ -33,17 +45,9 @@ class MeanFlowCriterion(DiffusionCriterion):
             "prediction_type": cfg.MODULE.NOISE_SCHEDULER.PREDICTION_TYPE,
         }
 
-    def forward(
-        self,
-        input: torch.Tensor,
-        target: torch.Tensor,
-        d_output_d_curr_timestep: torch.Tensor,
-        prev_timestep: torch.Tensor,
-        curr_timestep: torch.Tensor,
-    ) -> torch.Tensor:
-        y = target - (curr_timestep - prev_timestep) * d_output_d_curr_timestep
-        loss = adaptive_l2_loss(input - y.detach())
-        mse = (input - y).square().mean().detach()
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        loss = adaptive_l2_loss(input - target)
+        mse = (input - target).square().mean().detach()
         return {
             "loss": loss,
             "mse": mse,

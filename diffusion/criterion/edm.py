@@ -18,11 +18,7 @@ class EDMCriterion(DiffusionCriterion):
     """
 
     @configurable
-    def __init__(
-        self,
-        sigma_data: float,
-        prediction_type: str,
-    ) -> None:
+    def __init__(self, sigma_data: float, prediction_type: str) -> None:
         super().__init__(prediction_type=prediction_type)
 
         self.sigma_data = sigma_data
@@ -34,13 +30,7 @@ class EDMCriterion(DiffusionCriterion):
             "prediction_type": cfg.MODULE.NOISE_SCHEDULER.PREDICTION_TYPE,
         }
 
-    def forward(
-        self,
-        input: torch.Tensor,
-        target: torch.Tensor,
-        scale: torch.Tensor,
-        sigma: torch.Tensor,
-    ) -> torch.Tensor:
+    def forward(self, input: torch.Tensor, target: torch.Tensor, scale: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
         if self.prediction_type == "sample":
             weight = ((scale * self.sigma_data) ** 2 + sigma ** 2) / ((sigma * self.sigma_data) ** 2)
             loss = (weight * (input - target).square()).mean()

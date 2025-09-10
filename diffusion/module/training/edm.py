@@ -34,7 +34,7 @@ class EDMTrainingModule(DiffusionTrainingModule):
 
         self.timestep_mean = timestep_mean
         self.timestep_std = timestep_std
-        self.num_classes  = num_classes
+        self.num_classes = num_classes
 
     @classmethod
     def from_config(cls, cfg: DictConfig) -> dict[str, Any]:

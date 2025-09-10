@@ -319,10 +319,10 @@ class DiffusionTransformer(nn.Module):
     def forward(self, x: torch.Tensor, s: torch.Tensor, t: torch.Tensor, c: torch.Tensor | None = None) -> torch.Tensor:
         """
         Args:
-            `x` (torch.Tensor): Input tensor.
-            `s` (torch.Tensor): Scale tensor or previous time step tensor.
-            `t` (torch.Tensor): Sigma tensor or current time step tensor.
-            `c` (torch.Tensor | None, optional): Condition tensor. Defaults to None.
+            `x` (torch.Tensor): Input tensor, shape [B, C, H, W].
+            `s` (torch.Tensor): Scale tensor or previous time step tensor, shape [B, ...].
+            `t` (torch.Tensor): Sigma tensor or current time step tensor, shape [B, ...].
+            `c` (torch.Tensor | None, optional): Condition tensor, shape [B]. Defaults to None.
 
         Returns:
             (torch.Tensor): Output tensor.

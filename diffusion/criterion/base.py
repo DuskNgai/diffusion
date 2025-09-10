@@ -22,21 +22,3 @@ class DiffusionCriterion(nn.Module, metaclass=ABCMeta):
     @abstractmethod
     def forward(self, input: torch.Tensor, target: torch.Tensor, scale: torch.Tensor, sigma: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError
-
-
-def adaptive_l2_loss(error: torch.Tensor, gamma=0.0, eps=1e-3) -> torch.Tensor:
-    """
-    Adaptive L2 loss:
-        sg(w) * ||Δ||_2^2, where w = 1 / (||Δ||^2 + eps)^{1 - gamma}
-
-    Args:
-        `error`: Tensor of shape [B, ...]
-        `gamma`: Power used in original ||Δ||^{2 * gamma} loss
-        `eps`: Small constant for stability
-
-    Returns:
-        Scalar loss
-    """
-    loss = error.square().flatten(1).sum(dim=-1) # ||Δ||^2
-    w = 1.0 / (loss + eps).pow(1.0 - gamma)
-    return (w.detach() * loss).mean()

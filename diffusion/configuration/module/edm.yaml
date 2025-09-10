@@ -1,6 +1,3 @@
-CRITERION:
-  NAME: EDMCriterion
-
 MODULE:
   NAME: EDMTrainingModule
   COMPILE: True
