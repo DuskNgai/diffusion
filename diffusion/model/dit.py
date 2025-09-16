@@ -1,5 +1,6 @@
 import math
 
+from diffusers.models import ModelMixin
 from timm.models.vision_transformer import (
     Attention,
     PatchEmbed,
@@ -222,7 +223,7 @@ class FinalLayer(nn.Module):
 
 
 @MODEL_REGISTRY.register()
-class DiffusionTransformer(nn.Module):
+class DiffusionTransformer(ModelMixin):
 
     @configurable
     def __init__(

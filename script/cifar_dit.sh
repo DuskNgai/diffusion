@@ -29,9 +29,9 @@ MODEL.NUM_CLASSES 0
 python train.py \
 --config-file diffusion/configuration/mean_flow_dit_cifar.yaml \
 OUTPUT_DIR output/mean_flow/velocity_dit_cifar_unconditional \
+DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT \
 DATAMODULE.DATALOADER.TRAIN.BATCH_SIZE 32 \
 TRAINER.ACCUMULATE_GRAD_BATCHES 4 \
-DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT \
 MODEL.NUM_CLASSES 0
 
 python train.py \
@@ -53,6 +53,6 @@ DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT
 python train.py \
 --config-file diffusion/configuration/mean_flow_dit_cifar.yaml \
 OUTPUT_DIR output/mean_flow/velocity_dit_cifar_conditional \
+DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT \
 DATAMODULE.DATALOADER.TRAIN.BATCH_SIZE 32 \
-TRAINER.ACCUMULATE_GRAD_BATCHES 4 \
-DATAMODULE.DATASET.ROOT $PATH_TO_DATASET_ROOT
+TRAINER.ACCUMULATE_GRAD_BATCHES 4

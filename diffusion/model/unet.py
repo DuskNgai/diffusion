@@ -336,7 +336,7 @@ class FourierEmbedding(torch.nn.Module):
 
 
 @MODEL_REGISTRY.register()
-class SongUNet(torch.nn.Module):
+class SongUNet(ModelMixin):
 
     @configurable
     def __init__(
@@ -576,8 +576,6 @@ class DhariwalUNet(ModelMixin):
         label_dropout=0,               # Dropout probability of class labels for classifier-free guidance.
     ):
         super().__init__()
-        self.img_channels = in_channels
-        self.img_resolution = img_resolution
         self.label_dropout = label_dropout
         emb_channels = model_channels * channel_mult_emb
         init = dict(init_mode='kaiming_uniform', init_weight=np.sqrt(1 / 3), init_bias=np.sqrt(1 / 3))
