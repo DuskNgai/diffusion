@@ -4,6 +4,8 @@ This repository contains code related to Diffusion models and its extensions.
 - [Elucidating the Design Space of Diffusion-Based Generative Models](https://arxiv.org/abs/2206.00364)
 - [Flow Straight and Fast: Learning to Generate and Transfer Data with Rectified Flow](https://arxiv.org/abs/2209.03003)
 - [Mean Flows for One-step Generative Modeling](https://arxiv.org/abs/2505.13447)
+- [扩散模型中的采样方法（Sampling Methods for the Diffusion Models）](https://zhuanlan.zhihu.com/p/722128549)
+- [无需训练的扩散模型（Training-free Diffusion Models）](https://zhuanlan.zhihu.com/p/20738858403)
 
 ## Setup
 
@@ -36,6 +38,7 @@ python train.py \
 ```
 
 It takes approximately 14 hours to train UNet on the CIFAR-10 dataset for 200 epochs with 64 batch size using 1 RTX 3090 GPUs.
+It takes approximately 6 hours to train UNet on the CIFAR-10 dataset for 200 epochs with 128 batch size using 1 RTX 3090 GPUs.
 
 For example, you can train a unet model on cifar dataset using rectified flow with following command:
 ```bash
